@@ -2,10 +2,9 @@
   "manifest_version": 3,
   "name": "英语短语学习工具",
   "version": "1.0.0",
-  "description": "从网页或文本中提取四级以上英语短语，支持侧边栏显示",
+  "description": "生成英语短语，支持沉浸式阅读、单词本和间隔复习",
   "permissions": [
     "storage",
-    "activeTab",
     "sidePanel"
   ],
   "host_permissions": [

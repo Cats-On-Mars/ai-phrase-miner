@@ -1070,7 +1070,7 @@ function buildImmersiveHTML(text) {
     // 添加匹配的短语
     const info = state.translateWordMap[mark.phrase];
     const originalText = text.substring(mark.start, mark.end);
-    html += `<span class="immersive-word" data-word="${mark.phrase.replace(/"/g, '&quot;')}" data-pos="${(info.pos || '').replace(/"/g, '&quot;')}" data-phonetic="${(info.phonetic || '').replace(/"/g, '&quot;')}" data-meaning="${(info.meaning || '').replace(/"/g, '&quot;')}">${originalText}</span>`;
+    html += `<span class="immersive-word" data-word="${escapeAttr(mark.phrase)}" data-pos="${escapeAttr(info.pos || '')}" data-phonetic="${escapeAttr(info.phonetic || '')}" data-meaning="${escapeAttr(info.meaning || '')}">${escapeHtml(originalText)}</span>`;
     pos = mark.end;
   }
   // 添加剩余文本
@@ -1080,17 +1080,56 @@ function buildImmersiveHTML(text) {
   return html;
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+function escapeJsonAttr(value) {
+  return escapeAttr(JSON.stringify(value));
+}
+
 // HTML转义并保留换行
 function escapeText(str) {
   let result = '';
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
+  const text = String(str ?? '');
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (ch === '\n') result += '<br>';
+    else if (ch === '&') result += '&amp;';
     else if (ch === '<') result += '&lt;';
     else if (ch === '>') result += '&gt;';
+    else if (ch === '"') result += '&quot;';
+    else if (ch === "'") result += '&#39;';
     else result += ch;
   }
   return result;
+}
+
+function sanitizeRenderedHTML(root) {
+  const blockedTags = new Set(['SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'LINK', 'META']);
+  root.querySelectorAll('*').forEach((node) => {
+    if (blockedTags.has(node.tagName)) {
+      node.remove();
+      return;
+    }
+
+    [...node.attributes].forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.trim().toLowerCase();
+      if (name.startsWith('on') || name === 'srcdoc' || value.startsWith('javascript:')) {
+        node.removeAttribute(attr.name);
+      }
+    });
+  });
 }
 
 // 生成短语
@@ -1368,7 +1407,7 @@ function render() {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="20 6 9 17 4 12"></polyline>
         </svg>
-        <span style="font-weight: 600; font-size: 0.875rem;">${state.toastMessage}</span>
+        <span style="font-weight: 600; font-size: 0.875rem;">${escapeHtml(state.toastMessage)}</span>
       </div>
     ` : ''}
     
@@ -1415,7 +1454,7 @@ function render() {
               type="password"
               id="apiKeyInput"
               placeholder="请输入你的 DashScope API Key"
-              value="${state.apiKeyInput.replace(/"/g, '&quot;')}"
+              value="${escapeAttr(state.apiKeyInput)}"
               class="word-input"
               autocomplete="off"
             />
@@ -1459,8 +1498,8 @@ function render() {
                 <div class="phrase-card view-translate-record-btn" data-record-id="${record.id}" style="cursor: pointer;">
                   <div class="flex items-center justify-between">
                     <div style="flex: 1;">
-                      <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem; margin-bottom: 0.25rem;">📖 ${record.title}</p>
-                      <p style="font-size: 0.75rem; color: #6b7280;">${record.date} · ${Object.keys(record.wordMap || {}).length} 词 · ${(record.newWords || []).length} 生词</p>
+                      <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem; margin-bottom: 0.25rem;">📖 ${escapeHtml(record.title)}</p>
+                      <p style="font-size: 0.75rem; color: #6b7280;">${escapeHtml(record.date)} · ${Object.keys(record.wordMap || {}).length} 词 · ${(record.newWords || []).length} 生词</p>
                     </div>
                     <div class="flex items-center gap-1">
                       <button class="btn btn-red delete-translate-record-btn" data-record-id="${record.id}" style="padding: 0.25rem 0.375rem; font-size: 0.75rem;">
@@ -1506,13 +1545,13 @@ function render() {
             
             <div style="background: #f9fafb; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
               <div class="flex items-center justify-between mb-2">
-                <h3 style="font-weight: bold; color: #1f2937;">📄 ${state.selectedArticle.title}</h3>
-                <button class="btn btn-red delete-article-btn" data-article-id="${state.selectedArticle.id}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
+                <h3 style="font-weight: bold; color: #1f2937;">📄 ${escapeHtml(state.selectedArticle.title)}</h3>
+                <button class="btn btn-red delete-article-btn" data-article-id="${escapeAttr(state.selectedArticle.id)}" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
                   删除
                 </button>
               </div>
-              <p style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">${state.selectedArticle.date} · ${state.selectedArticle.phraseCount} 个短语</p>
-              <div style="background: white; padding: 0.75rem; border-radius: 0.375rem; max-height: 200px; overflow-y: auto; font-size: 0.875rem; line-height: 1.6; color: #374151; white-space: pre-wrap;">${state.selectedArticle.content}</div>
+              <p style="font-size: 0.75rem; color: #6b7280; margin-bottom: 0.5rem;">${escapeHtml(state.selectedArticle.date)} · ${state.selectedArticle.phraseCount} 个短语</p>
+              <div style="background: white; padding: 0.75rem; border-radius: 0.375rem; max-height: 200px; overflow-y: auto; font-size: 0.875rem; line-height: 1.6; color: #374151; white-space: pre-wrap;">${escapeHtml(state.selectedArticle.content)}</div>
             </div>
             
             <h3 style="font-weight: bold; margin-bottom: 0.75rem; color: #1f2937;">提取的短语</h3>
@@ -1522,25 +1561,25 @@ function render() {
                   <div class="flex items-start gap-2">
                     <span class="phrase-number">${index + 1}</span>
                     <div style="flex: 1;">
-                      <p class="phrase-title">${item.phrase}</p>
-                      ${item.phonetic ? `<p class="phrase-phonetic">${item.phonetic}</p>` : ''}
-                      <p class="phrase-meaning">${item.meaning}</p>
+                      <p class="phrase-title">${escapeHtml(item.phrase)}</p>
+                      ${item.phonetic ? `<p class="phrase-phonetic">${escapeHtml(item.phonetic)}</p>` : ''}
+                      <p class="phrase-meaning">${escapeHtml(item.meaning)}</p>
                       ${item.contextExample ? `
                         <div class="phrase-example">
                           <p class="phrase-example-label">文中例句:</p>
-                          <p class="phrase-example-text">${item.contextExample}</p>
+                          <p class="phrase-example-text">${escapeHtml(item.contextExample)}</p>
                         </div>
                       ` : ''}
                       ${item.otherExamples && item.otherExamples.length > 0 ? `
                         <div class="phrase-other-examples">
                           <p class="phrase-other-examples-label">其他例句:</p>
                           ${item.otherExamples.map(ex => `
-                            <p class="phrase-other-example-item">• ${ex}</p>
+                            <p class="phrase-other-example-item">• ${escapeHtml(ex)}</p>
                           `).join('')}
                         </div>
                       ` : ''}
                     </div>
-                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${item.phrase.replace(/"/g, '&quot;')}" data-meaning="${item.meaning.replace(/"/g, '&quot;')}" data-phonetic="${(item.phonetic || '').replace(/"/g, '&quot;')}" data-examples="${JSON.stringify([item.contextExample || '', ...(item.otherExamples || [])].filter(ex => ex).slice(0, 2)).replace(/"/g, '&quot;')}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
+                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${escapeAttr(item.phrase)}" data-meaning="${escapeAttr(item.meaning)}" data-phonetic="${escapeAttr(item.phonetic || '')}" data-examples="${escapeJsonAttr([item.contextExample || '', ...(item.otherExamples || [])].filter(ex => ex).slice(0, 2))}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1555,11 +1594,11 @@ function render() {
             ${state.articles.length > 0 ? `
               <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 ${state.articles.map(article => `
-                  <div class="phrase-card view-article-btn" data-article-id="${article.id}" style="cursor: pointer;">
+                  <div class="phrase-card view-article-btn" data-article-id="${escapeAttr(article.id)}" style="cursor: pointer;">
                     <div class="flex items-center justify-between">
                       <div style="flex: 1;">
-                        <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem; margin-bottom: 0.25rem;">📄 ${article.title}</p>
-                        <p style="font-size: 0.75rem; color: #6b7280;">${article.date} · ${article.phraseCount} 个短语</p>
+                        <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem; margin-bottom: 0.25rem;">📄 ${escapeHtml(article.title)}</p>
+                        <p style="font-size: 0.75rem; color: #6b7280;">${escapeHtml(article.date)} · ${article.phraseCount} 个短语</p>
                       </div>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #9ca3af;">
                         <polyline points="9 18 15 12 9 6"></polyline>
@@ -1588,7 +1627,7 @@ function render() {
         <textarea
           id="inputText"
           placeholder="请粘贴英文文章内容..."
-        >${state.input}</textarea>
+        >${escapeHtml(state.input)}</textarea>
 
         <button
           id="extractBtn"
@@ -1610,7 +1649,7 @@ function render() {
           type="text"
           id="wordInput"
           placeholder="请输入一个英文单词，如：advantage"
-          value="${state.input}"
+          value="${escapeAttr(state.input)}"
           class="word-input"
         />
 
@@ -1647,7 +1686,7 @@ function render() {
             id="translateTextInput"
             placeholder="粘贴英文短文到这里，或上传文件..."
             style="height: 12rem;"
-          >${state.translateInput}</textarea>
+          >${escapeHtml(state.translateInput)}</textarea>
 
           <button
             id="translateBtn"
@@ -1711,12 +1750,12 @@ function render() {
                 ${state.newWords.map(w => {
                   const isGenerated = state.newWordPhraseGenerated.has(w.word);
                   return `
-                    <div class="new-word-tag ${isGenerated ? 'new-word-tag-generated' : ''}" data-word="${w.word}">
-                      <span class="new-word-tag-word">${w.word}</span>
-                      ${w.phonetic ? `<span class="new-word-tag-phonetic">${w.phonetic}</span>` : ''}
-                      <span class="new-word-tag-pos">${w.pos}</span>
-                      <span class="new-word-tag-meaning">${w.meaning}</span>
-                      <button class="new-word-remove-btn" data-word="${w.word}">&times;</button>
+                    <div class="new-word-tag ${isGenerated ? 'new-word-tag-generated' : ''}" data-word="${escapeAttr(w.word)}">
+                      <span class="new-word-tag-word">${escapeHtml(w.word)}</span>
+                      ${w.phonetic ? `<span class="new-word-tag-phonetic">${escapeHtml(w.phonetic)}</span>` : ''}
+                      <span class="new-word-tag-pos">${escapeHtml(w.pos)}</span>
+                      <span class="new-word-tag-meaning">${escapeHtml(w.meaning)}</span>
+                      <button class="new-word-remove-btn" data-word="${escapeAttr(w.word)}">&times;</button>
                     </div>
                   `;
                 }).join('')}
@@ -1742,16 +1781,16 @@ function render() {
                   ${state.newWords.filter(w => state.newWordPhrases[w.word]).map(w => `
                     <div class="phrase-card" style="padding: 0.625rem;">
                       <div style="flex: 1;">
-                        <p class="phrase-title" style="font-size: 0.875rem;">${w.word}</p>
-                        ${w.phonetic ? `<p class="phrase-phonetic">${w.phonetic}</p>` : ''}
-                        <p class="phrase-meaning" style="font-size: 0.8125rem;">${w.pos} ${w.meaning}</p>
+                        <p class="phrase-title" style="font-size: 0.875rem;">${escapeHtml(w.word)}</p>
+                        ${w.phonetic ? `<p class="phrase-phonetic">${escapeHtml(w.phonetic)}</p>` : ''}
+                        <p class="phrase-meaning" style="font-size: 0.8125rem;">${escapeHtml(w.pos)} ${escapeHtml(w.meaning)}</p>
                         ${Array.isArray(state.newWordPhrases[w.word]) && state.newWordPhrases[w.word].length > 0 ? `
                           <div class="phrase-other-examples" style="margin-top: 0.25rem;">
                             ${state.newWordPhrases[w.word].map(ex => typeof ex === 'string' ? `
-                              <p class="phrase-other-example-item" style="font-size: 0.8125rem;">• ${ex}</p>
+                              <p class="phrase-other-example-item" style="font-size: 0.8125rem;">• ${escapeHtml(ex)}</p>
                             ` : `
-                              <p class="phrase-other-example-item" style="font-size: 0.8125rem;">• ${ex.en}</p>
-                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${ex.zh}</p>
+                              <p class="phrase-other-example-item" style="font-size: 0.8125rem;">• ${escapeHtml(ex.en)}</p>
+                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${escapeHtml(ex.zh)}</p>
                             `).join('')}
                           </div>
                         ` : ''}
@@ -1790,7 +1829,7 @@ function render() {
                         <line x1="8" y1="2" x2="8" y2="6"></line>
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                       </svg>
-                      <span>${state.selectedVocabDate === 'all' ? '全部' : state.selectedVocabDate}</span>
+                      <span>${state.selectedVocabDate === 'all' ? '全部' : escapeHtml(state.selectedVocabDate)}</span>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
                       </svg>
@@ -1805,8 +1844,8 @@ function render() {
                         ${getVocabularyDates().map(date => {
                           const count = state.vocabulary.filter(item => item.addedDate && item.addedDate.split(' ')[0] === date).length;
                           return `
-                            <div class="vocab-date-option" data-date="${date}" style="padding: 0.5rem 0.875rem; cursor: pointer; font-size: 0.8125rem; border-bottom: 1px solid #f3f4f6; background: ${state.selectedVocabDate === date ? '#f1f8e9' : 'white'}; display: flex; align-items: center; justify-content: space-between;">
-                              <div style="font-weight: 600;">${date}</div>
+                            <div class="vocab-date-option" data-date="${escapeAttr(date)}" style="padding: 0.5rem 0.875rem; cursor: pointer; font-size: 0.8125rem; border-bottom: 1px solid #f3f4f6; background: ${state.selectedVocabDate === date ? '#f1f8e9' : 'white'}; display: flex; align-items: center; justify-content: space-between;">
+                              <div style="font-weight: 600;">${escapeHtml(date)}</div>
                               <div style="font-size: 0.6875rem; color: #6b7280;">${count} 个</div>
                             </div>
                           `;
@@ -1840,17 +1879,17 @@ function render() {
                     <div class="flex items-start gap-2">
                       <span class="phrase-number">${index + 1}</span>
                       <div style="flex: 1;">
-                        <p class="phrase-title">${item.phrase}</p>
-                        ${item.phonetic ? `<p class="phrase-phonetic">${item.phonetic}</p>` : ''}
-                        <p class="phrase-meaning">${item.meaning}</p>
+                        <p class="phrase-title">${escapeHtml(item.phrase)}</p>
+                        ${item.phonetic ? `<p class="phrase-phonetic">${escapeHtml(item.phonetic)}</p>` : ''}
+                        <p class="phrase-meaning">${escapeHtml(item.meaning)}</p>
                         ${item.examples && item.examples.length > 0 ? `
                           <div class="phrase-other-examples">
                             <p class="phrase-other-examples-label">例句:</p>
                             ${item.examples.map(ex => typeof ex === 'string' ? `
-                              <p class="phrase-other-example-item">• ${ex}</p>
+                              <p class="phrase-other-example-item">• ${escapeHtml(ex)}</p>
                             ` : `
-                              <p class="phrase-other-example-item">• ${ex.en}</p>
-                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${ex.zh}</p>
+                              <p class="phrase-other-example-item">• ${escapeHtml(ex.en)}</p>
+                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${escapeHtml(ex.zh)}</p>
                             `).join('')}
                           </div>
                         ` : ''}
@@ -1905,7 +1944,7 @@ function render() {
                           }).join('')}
                         </div>
                       </div>
-                      <button class="btn btn-red remove-vocab-btn" data-vocab-id="${item.id}" style="padding: 0.25rem; margin-left: 0.5rem;">
+                      <button class="btn btn-red remove-vocab-btn" data-vocab-id="${escapeAttr(item.id)}" style="padding: 0.25rem; margin-left: 0.5rem;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <polyline points="3 6 5 6 21 6"></polyline>
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -1952,18 +1991,18 @@ function render() {
                       <span class="phrase-number">${index + 1}</span>
                       <div style="flex: 1;">
                         <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
-                          <p class="phrase-title">${item.phrase}</p>
+                          <p class="phrase-title">${escapeHtml(item.phrase)}</p>
                         </div>
-                        ${item.phonetic ? `<p class="phrase-phonetic">${item.phonetic}</p>` : ''}
-                        <p class="phrase-meaning">${item.meaning}</p>
+                        ${item.phonetic ? `<p class="phrase-phonetic">${escapeHtml(item.phonetic)}</p>` : ''}
+                        <p class="phrase-meaning">${escapeHtml(item.meaning)}</p>
                         ${item.examples && item.examples.length > 0 ? `
                           <div class="phrase-other-examples">
                             <p class="phrase-other-examples-label">例句:</p>
                             ${item.examples.map(ex => typeof ex === 'string' ? `
-                              <p class="phrase-other-example-item">• ${ex}</p>
+                              <p class="phrase-other-example-item">• ${escapeHtml(ex)}</p>
                             ` : `
-                              <p class="phrase-other-example-item">• ${ex.en}</p>
-                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${ex.zh}</p>
+                              <p class="phrase-other-example-item">• ${escapeHtml(ex.en)}</p>
+                              <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${escapeHtml(ex.zh)}</p>
                             `).join('')}
                           </div>
                         ` : ''}
@@ -2015,7 +2054,7 @@ function render() {
                           }).join('')}
                         </div>
                       </div>
-                      <button class="btn mark-reviewed-btn" data-vocab-id="${item.id}" style="padding: 0.375rem; margin-left: 0.5rem; background: transparent; border: none; flex-shrink: 0;">
+                      <button class="btn mark-reviewed-btn" data-vocab-id="${escapeAttr(item.id)}" style="padding: 0.375rem; margin-left: 0.5rem; background: transparent; border: none; flex-shrink: 0;">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" stroke-width="1.5">
                           <rect x="3" y="3" width="18" height="18" rx="4" ry="4"/>
                         </svg>
@@ -2074,25 +2113,25 @@ function render() {
                       ${index + 1}
                     </span>
                     <div style="flex: 1;">
-                      <p class="phrase-title">${item.phrase}</p>
-                      ${item.phonetic ? `<p class="phrase-phonetic">${item.phonetic}</p>` : ''}
-                      <p class="phrase-meaning">${item.meaning}</p>
+                      <p class="phrase-title">${escapeHtml(item.phrase)}</p>
+                      ${item.phonetic ? `<p class="phrase-phonetic">${escapeHtml(item.phonetic)}</p>` : ''}
+                      <p class="phrase-meaning">${escapeHtml(item.meaning)}</p>
                       ${item.contextExample ? `
                         <div class="phrase-example">
                           <p class="phrase-example-label">文中例句:</p>
-                          <p class="phrase-example-text">${item.contextExample}</p>
+                          <p class="phrase-example-text">${escapeHtml(item.contextExample)}</p>
                         </div>
                       ` : ''}
                       ${item.otherExamples && item.otherExamples.length > 0 ? `
                         <div class="phrase-other-examples">
                           <p class="phrase-other-examples-label">其他例句:</p>
                           ${item.otherExamples.map(ex => `
-                            <p class="phrase-other-example-item">• ${ex}</p>
+                            <p class="phrase-other-example-item">• ${escapeHtml(ex)}</p>
                           `).join('')}
                         </div>
                       ` : ''}
                     </div>
-                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${item.phrase.replace(/"/g, '&quot;')}" data-meaning="${item.meaning.replace(/"/g, '&quot;')}" data-phonetic="${(item.phonetic || '').replace(/"/g, '&quot;')}" data-examples="${JSON.stringify([item.contextExample || '', ...(item.otherExamples || [])].filter(ex => ex).slice(0, 2)).replace(/"/g, '&quot;')}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
+                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${escapeAttr(item.phrase)}" data-meaning="${escapeAttr(item.meaning)}" data-phonetic="${escapeAttr(item.phonetic || '')}" data-examples="${escapeJsonAttr([item.contextExample || '', ...(item.otherExamples || [])].filter(ex => ex).slice(0, 2))}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -2109,9 +2148,9 @@ function render() {
           <div class="mt-4">
             <!-- 单词信息卡片 -->
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 0.75rem; color: white; margin-bottom: 1rem;">
-              <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.25rem;">${state.generatedPhrases.word}</h2>
-              <p style="font-size: 0.875rem; font-style: italic; margin-bottom: 0.5rem;">${state.generatedPhrases.phonetic}</p>
-              <p style="font-size: 1rem;">${state.generatedPhrases.meaning}</p>
+              <h2 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.25rem;">${escapeHtml(state.generatedPhrases.word)}</h2>
+              <p style="font-size: 0.875rem; font-style: italic; margin-bottom: 0.5rem;">${escapeHtml(state.generatedPhrases.phonetic)}</p>
+              <p style="font-size: 1rem;">${escapeHtml(state.generatedPhrases.meaning)}</p>
             </div>
             
             <!-- 短语列表 -->
@@ -2124,22 +2163,22 @@ function render() {
                   <div class="flex items-start gap-2">
                     <span class="phrase-number">${index + 1}</span>
                     <div style="flex: 1;">
-                      <p class="phrase-title">${item.phrase}</p>
-                      ${item.phonetic ? `<p class="phrase-phonetic">${item.phonetic}</p>` : ''}
-                      <p class="phrase-meaning">${item.meaning}</p>
+                      <p class="phrase-title">${escapeHtml(item.phrase)}</p>
+                      ${item.phonetic ? `<p class="phrase-phonetic">${escapeHtml(item.phonetic)}</p>` : ''}
+                      <p class="phrase-meaning">${escapeHtml(item.meaning)}</p>
                       ${item.examples && item.examples.length > 0 ? `
                         <div class="phrase-other-examples">
                           <p class="phrase-other-examples-label">例句:</p>
                           ${item.examples.map(ex => typeof ex === 'string' ? `
-                            <p class="phrase-other-example-item">• ${ex}</p>
+                            <p class="phrase-other-example-item">• ${escapeHtml(ex)}</p>
                           ` : `
-                            <p class="phrase-other-example-item">• ${ex.en}</p>
-                            <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${ex.zh}</p>
+                            <p class="phrase-other-example-item">• ${escapeHtml(ex.en)}</p>
+                            <p style="font-size: 0.75rem; color: #6b7280; margin: 0.1rem 0 0.3rem 1rem;">${escapeHtml(ex.zh)}</p>
                           `).join('')}
                         </div>
                       ` : ''}
                     </div>
-                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${item.phrase.replace(/"/g, '&quot;')}" data-meaning="${item.meaning.replace(/"/g, '&quot;')}" data-phonetic="${(item.phonetic || '').replace(/"/g, '&quot;')}" data-examples="${JSON.stringify((item.examples || []).slice(0, 2)).replace(/"/g, '&quot;')}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
+                    <button class="btn btn-green add-to-vocab-btn" data-phrase="${escapeAttr(item.phrase)}" data-meaning="${escapeAttr(item.meaning)}" data-phonetic="${escapeAttr(item.phonetic || '')}" data-examples="${escapeJsonAttr((item.examples || []).slice(0, 2))}" style="padding: 0.375rem; margin-left: 0.5rem; white-space: nowrap; align-self: flex-start;">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -2155,6 +2194,7 @@ function render() {
     </div>
   `;
   
+  sanitizeRenderedHTML(app);
   // 绑定事件监听器
   attachEventListeners();
 }
