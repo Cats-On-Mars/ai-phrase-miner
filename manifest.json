@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "英语短语学习工具",
+  "version": "1.0.0",
+  "description": "从网页或文本中提取四级以上英语短语，支持侧边栏显示",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://dashscope.aliyuncs.com/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "打开短语提取工具"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
