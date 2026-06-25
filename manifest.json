@@ -8,7 +8,9 @@
     "sidePanel"
   ],
   "host_permissions": [
-    "https://dashscope.aliyuncs.com/*"
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"

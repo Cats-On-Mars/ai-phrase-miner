@@ -1,11 +1,18 @@
+const DEFAULT_API_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+const DEFAULT_API_MODEL = 'qwen3.7-plus';
+
 // 应用状态
 let state = {
-  mode: 'generate', // 'extract', 'generate', 'vocabulary', 'articles', 'review', 'translate', 'translateHistory'
+  mode: 'generate', // 'extract', 'generate', 'vocabulary', 'articles', 'review', 'translate', 'translateHistory', 'settings'
+  settingsReturnMode: 'generate',
   input: '',
   inputType: 'text',
   apiKey: '',
   apiKeyInput: '',
-  showApiSettings: false,
+  apiBaseUrl: DEFAULT_API_BASE_URL,
+  apiBaseUrlInput: DEFAULT_API_BASE_URL,
+  apiModel: DEFAULT_API_MODEL,
+  apiModelInput: DEFAULT_API_MODEL,
   phrases: [],
   generatedPhrases: [],
   vocabulary: [],
@@ -26,6 +33,7 @@ let state = {
   // 翻译记录
   translateRecords: [], // [{ id, title, timestamp, date, originalText, wordMap, newWords, newWordPhrases, newWordPhraseGenerated }]
   currentTranslateRecordId: null, // 当前关联的翻译记录ID
+  extractFromHistory: false,
   loading: false,
   error: '',
   copied: false,
@@ -33,76 +41,114 @@ let state = {
   toastMessage: ''
 };
 
-const DASHSCOPE_API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
-const DASHSCOPE_MODEL = 'qwen3.7-plus';
-
-// 从本地存储加载用户自己的API Key。不要在公开仓库中硬编码密钥。
+// 从本地存储加载用户自己的 AI 接口配置。不要在公开仓库中硬编码密钥。
 async function loadApiKey() {
   try {
-    const result = await chrome.storage.local.get('dashscopeApiKey');
+    const result = await chrome.storage.local.get(['dashscopeApiKey', 'llmApiBaseUrl', 'llmModel']);
     state.apiKey = result.dashscopeApiKey || '';
     state.apiKeyInput = state.apiKey;
+    state.apiBaseUrl = result.llmApiBaseUrl || DEFAULT_API_BASE_URL;
+    state.apiBaseUrlInput = state.apiBaseUrl;
+    state.apiModel = result.llmModel || DEFAULT_API_MODEL;
+    state.apiModelInput = state.apiModel;
+    if (!state.apiKey) {
+      state.settingsReturnMode = state.mode === 'settings' ? state.settingsReturnMode : state.mode;
+      state.mode = 'settings';
+    }
     render();
   } catch (err) {
-    console.log('加载API Key失败:', err);
+    console.log('加载AI配置失败:', err);
   }
 }
 
 async function saveApiKey() {
   const apiKey = state.apiKeyInput.trim();
+  const apiBaseUrl = state.apiBaseUrlInput.trim();
+  const apiModel = state.apiModelInput.trim();
   if (!apiKey) {
-    state.error = '请输入 DashScope API Key';
+    state.error = '请输入 API Key';
+    render();
+    return;
+  }
+  if (!apiBaseUrl) {
+    state.error = '请输入 API 地址';
+    render();
+    return;
+  }
+  if (!/^https?:\/\//i.test(apiBaseUrl)) {
+    state.error = 'API 地址需要以 http:// 或 https:// 开头';
+    render();
+    return;
+  }
+  if (!apiModel) {
+    state.error = '请输入模型名称';
     render();
     return;
   }
 
   try {
-    await chrome.storage.local.set({ dashscopeApiKey: apiKey });
+    await chrome.storage.local.set({
+      dashscopeApiKey: apiKey,
+      llmApiBaseUrl: apiBaseUrl,
+      llmModel: apiModel
+    });
     state.apiKey = apiKey;
     state.apiKeyInput = apiKey;
-    state.showApiSettings = false;
+    state.apiBaseUrl = apiBaseUrl;
+    state.apiBaseUrlInput = apiBaseUrl;
+    state.apiModel = apiModel;
+    state.apiModelInput = apiModel;
     state.error = '';
-    showSuccessToast('API Key 已保存');
+    showSuccessToast('AI 配置已保存');
   } catch (err) {
-    state.error = '保存API Key失败: ' + (err.message || '未知错误');
+    state.error = '保存AI配置失败: ' + (err.message || '未知错误');
     render();
   }
 }
 
 async function clearApiKey() {
   try {
-    await chrome.storage.local.remove('dashscopeApiKey');
+    await chrome.storage.local.remove(['dashscopeApiKey', 'llmApiBaseUrl', 'llmModel']);
     state.apiKey = '';
     state.apiKeyInput = '';
-    state.showApiSettings = true;
-    showSuccessToast('API Key 已清除');
+    state.apiBaseUrl = DEFAULT_API_BASE_URL;
+    state.apiBaseUrlInput = DEFAULT_API_BASE_URL;
+    state.apiModel = DEFAULT_API_MODEL;
+    state.apiModelInput = DEFAULT_API_MODEL;
+    state.settingsReturnMode = state.mode === 'settings' ? state.settingsReturnMode : state.mode;
+    state.mode = 'settings';
+    showSuccessToast('AI 配置已清除');
   } catch (err) {
-    state.error = '清除API Key失败: ' + (err.message || '未知错误');
+    state.error = '清除AI配置失败: ' + (err.message || '未知错误');
     render();
   }
 }
 
 function ensureApiKey() {
-  if (state.apiKey.trim()) return true;
-  state.showApiSettings = true;
-  state.error = '请先填写 DashScope API Key';
+  if (state.apiKey.trim() && state.apiBaseUrl.trim() && state.apiModel.trim()) return true;
+  state.settingsReturnMode = state.mode === 'settings' ? state.settingsReturnMode : state.mode;
+  state.mode = 'settings';
+  state.error = '请先填写 AI 接口配置';
   render();
   return false;
 }
 
-async function callDashScope(messages) {
+async function callAI(messages) {
   if (!state.apiKey.trim()) {
-    throw new Error('请先填写 DashScope API Key');
+    throw new Error('请先填写 API Key');
+  }
+  if (!state.apiBaseUrl.trim() || !state.apiModel.trim()) {
+    throw new Error('请先填写 API 地址和模型名称');
   }
 
-  return fetch(DASHSCOPE_API_URL, {
+  return fetch(state.apiBaseUrl.trim(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${state.apiKey.trim()}`
     },
     body: JSON.stringify({
-      model: DASHSCOPE_MODEL,
+      model: state.apiModel.trim(),
       messages
     })
   });
@@ -139,6 +185,7 @@ async function saveToArticles(text, phrases) {
     
     await chrome.storage.local.set({ [`article_${timestamp}`]: JSON.stringify(articleItem) });
     await loadArticles();
+    await loadTranslateRecords();
   } catch (err) {
     console.error('保存到短文簿失败:', err);
   }
@@ -603,7 +650,7 @@ async function batchTranslateWords(text) {
 
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
       const segment = segments[segIdx];
-      const response = await callDashScope([
+      const response = await callAI([
         {
           role: 'user',
           content: `你是一个英语短语专家。请从以下英文文本中提取所有有学习价值的短语、搭配、固定表达，并给出在该语境下的中文释义。
@@ -663,7 +710,7 @@ ${segment}
       }
 
       for (const batch of wordBatches) {
-        const response = await callDashScope([
+        const response = await callAI([
           {
             role: 'user',
             content: `你是一个英语词典。请根据以下文章上下文，为每个英文单词给出在该语境下最准确的中文释义和词性。
@@ -713,11 +760,11 @@ ${batch.join(', ')}
     }
 
     state.translateReady = true;
-    // 保存翻译记录
+    // 保存提取记录
     await saveNewTranslateRecord(text);
   } catch (err) {
-    state.error = '翻译失败: ' + (err.message || '未知错误');
-    console.error('翻译错误:', err);
+    state.error = '手动提取失败: ' + (err.message || '未知错误');
+    console.error('手动提取错误:', err);
   } finally {
     state.loading = false;
     render();
@@ -730,10 +777,11 @@ ${batch.join(', ')}
 async function loadTranslateRecords() {
   try {
     const result = await chrome.storage.local.get(null);
-    const records = Object.keys(result)
+    const manualRecords = Object.keys(result)
       .filter(key => key.startsWith('translate_'))
       .map(key => {
         const r = JSON.parse(result[key]);
+        r.recordType = 'manual';
         // 恢复 Set
         if (r.newWordPhraseGenerated && Array.isArray(r.newWordPhraseGenerated)) {
           r.newWordPhraseGenerated = new Set(r.newWordPhraseGenerated);
@@ -741,9 +789,37 @@ async function loadTranslateRecords() {
           r.newWordPhraseGenerated = new Set();
         }
         return r;
-      })
+      });
+
+    const autoRecords = Object.keys(result)
+      .filter(key => key.startsWith('article_'))
+      .map(key => {
+        const r = JSON.parse(result[key]);
+        const phrases = Array.isArray(r.phrases) ? r.phrases : [];
+        const wordMap = {};
+        phrases.forEach(item => {
+          if (!item || !item.phrase) return;
+          wordMap[item.phrase.toLowerCase()] = {
+            pos: 'phrase',
+            phonetic: item.phonetic || '',
+            meaning: item.meaning || ''
+          };
+        });
+        return {
+          id: r.id || key,
+          recordType: 'auto',
+          title: r.title || '自动提取记录',
+          timestamp: r.timestamp || 0,
+          date: r.date || '',
+          originalText: r.content || r.originalText || '',
+          phrases,
+          wordMap,
+          newWords: []
+        };
+      });
+
+    state.translateRecords = [...manualRecords, ...autoRecords]
       .sort((a, b) => b.timestamp - a.timestamp);
-    state.translateRecords = records;
   } catch (err) {
     console.log('加载翻译记录失败:', err);
   }
@@ -794,6 +870,21 @@ async function saveCurrentTranslateRecord() {
 
 // 恢复翻译记录到沉浸式阅读界面
 function restoreTranslateRecord(record) {
+  if (record.recordType === 'auto') {
+    state.mode = 'extract';
+    state.input = record.originalText || '';
+    state.translateInput = state.input;
+    state.phrases = record.phrases || [];
+    state.generatedPhrases = [];
+    state.translateReady = false;
+    state.currentTranslateRecordId = null;
+    state.extractFromHistory = true;
+    state.translateFromHistory = false;
+    state.error = '';
+    render();
+    return;
+  }
+
   state.mode = 'translate';
   state.translateOriginalText = record.originalText;
   state.translateWordMap = record.wordMap || {};
@@ -804,6 +895,7 @@ function restoreTranslateRecord(record) {
     : new Set(record.newWordPhraseGenerated || []);
   state.translateReady = true;
   state.currentTranslateRecordId = record.id;
+  state.extractFromHistory = false;
   state.translateFromHistory = true;
   state.error = '';
   render();
@@ -891,16 +983,6 @@ function exportTranslateMarkdown() {
   }
 }
 
-// 处理文件上传
-function handleTranslateFileUpload(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    state.translateInput = e.target.result;
-    render();
-  };
-  reader.readAsText(file);
-}
-
 // 添加生词到生词区
 function addNewWord(word, pos, phonetic, meaning) {
   const lower = word.toLowerCase();
@@ -936,7 +1018,7 @@ async function generateNewWordPhrases() {
 
   try {
     const phraseList = wordsToGenerate.map(w => `${w.word} (${w.meaning})`).join('\n');
-    const response = await callDashScope([
+    const response = await callAI([
       {
         role: 'user',
         content: `请为以下英文短语各生成2个实用例句。
@@ -1148,7 +1230,7 @@ async function generatePhrases() {
   render();
 
   try {
-    const response = await callDashScope([
+    const response = await callAI([
       {
         role: 'user',
         content: `请为英文单词"${state.input}"提供以下信息：
@@ -1228,7 +1310,7 @@ async function extractPhrases() {
 
   try {
 
-    const response = await callDashScope([
+    const response = await callAI([
       {
         role: 'user',
         content: `请从以下英文文本中提取出所有四级以上水平的英语短语(包括固定搭配、习惯用语、专业术语等)。
@@ -1400,6 +1482,7 @@ function exportToMarkdown() {
 // 渲染UI
 function render() {
   const app = document.getElementById('app');
+  const extractionInputValue = state.mode === 'translate' ? state.translateInput : state.input;
   
   app.innerHTML = `
     ${state.showToast ? `
@@ -1422,10 +1505,10 @@ function render() {
             <button id="vocabularyBtn" class="btn" style="font-size: 0.875rem; padding: 0.4rem; background: transparent; border: none;">
               <img src="单词库.png" width="18" height="18" alt="单词本" style="display: block;" />
             </button>
-            <button id="articlesBtn" class="btn" style="display: none;">
-              <img src="短文.png" width="18" height="18" alt="短文簿" style="display: none;" />
+            <button id="articlesBtn" class="btn" style="display: none;" title="提取记录">
+              <span style="font-size: 18px; line-height: 18px; display: none;">📄</span>
             </button>
-            <button id="translateHistoryBtn" class="btn" style="font-size: 0.875rem; padding: 0.4rem; background: transparent; border: none;" title="翻译记录">
+            <button id="translateHistoryBtn" class="btn" style="font-size: 0.875rem; padding: 0.4rem; background: transparent; border: none;" title="提取记录">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1f2937" stroke-width="2" style="display: block;">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10"/>
                 <polyline points="12 6 12 12 16 14"/>
@@ -1441,19 +1524,37 @@ function render() {
           </div>
         </div>
 
-        ${state.showApiSettings || !state.apiKey ? `
-          <div class="api-settings mb-4">
-            <div class="flex items-center justify-between mb-2">
+        ${state.mode === 'settings' ? `
+          <div class="api-settings">
+            <div class="flex items-center justify-between mb-3">
               <div>
-                <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem;">DashScope API Key</p>
-                <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.125rem;">密钥只保存在本机 Chrome 存储中，不会提交到代码仓库。</p>
+                <p style="font-weight: 700; color: #1f2937; font-size: 1rem;">AI 接口设置</p>
+                <p style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; line-height: 1.5;">支持 OpenAI 兼容的 chat/completions 接口，配置只保存在本机。</p>
               </div>
               ${state.apiKey ? `<span class="api-status">已配置</span>` : `<span class="api-status api-status-missing">未配置</span>`}
             </div>
             <input
+              type="text"
+              id="apiBaseUrlInput"
+              placeholder="API 地址，如 https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+              value="${escapeAttr(state.apiBaseUrlInput)}"
+              class="word-input"
+              autocomplete="off"
+              style="margin-bottom: 0.5rem;"
+            />
+            <input
+              type="text"
+              id="apiModelInput"
+              placeholder="模型名称，如 qwen3.7-plus"
+              value="${escapeAttr(state.apiModelInput)}"
+              class="word-input"
+              autocomplete="off"
+              style="margin-bottom: 0.5rem;"
+            />
+            <input
               type="password"
               id="apiKeyInput"
-              placeholder="请输入你的 DashScope API Key"
+              placeholder="API Key"
               value="${escapeAttr(state.apiKeyInput)}"
               class="word-input"
               autocomplete="off"
@@ -1465,56 +1566,69 @@ function render() {
           </div>
         ` : ''}
         
-        ${(state.mode === 'extract' || state.mode === 'generate' || state.mode === 'translate') && !(state.mode === 'translate' && state.translateReady) ? `
+        ${(state.mode === 'extract' || state.mode === 'generate' || state.mode === 'translate') && !(state.mode === 'translate' && state.translateReady) && !state.extractFromHistory ? `
         <!-- 模式切换 -->
         <div class="flex gap-2 mb-4">
           <button id="generateModeBtn" class="btn ${state.mode === 'generate' ? 'btn-primary' : 'btn-gray'}" style="flex: 1; font-size: 0.85rem; padding: 0.362rem 0.57em; display: flex; align-items: center; justify-content: center;">
             生成
           </button>
-          <button id="extractModeBtn" class="btn ${state.mode === 'extract' ? 'btn-primary' : 'btn-gray'}" style="display: none;">
+          <button id="extractGroupBtn" class="btn ${(state.mode === 'extract' || state.mode === 'translate') ? 'btn-primary' : 'btn-gray'}" style="flex: 1; font-size: 0.85rem; padding: 0.362rem 0.57em; display: flex; align-items: center; justify-content: center;">
             提取
-          </button>
-          <button id="translateModeBtn" class="btn ${state.mode === 'translate' ? 'btn-primary' : 'btn-gray'}" style="flex: 1; font-size: 0.85rem; padding: 0.362rem 0.57em; display: flex; align-items: center; justify-content: center;">
-            翻译
           </button>
         </div>
         ` : ''}
         
-        <p class="subtitle">${
-          state.mode === 'extract' ? '提取四级以上英语短语' : 
-          state.mode === 'generate' ? '输入单词生成相关短语' :
-          state.mode === 'translate' ? '沉浸式英文阅读' :
-          state.mode === 'translateHistory' ? '翻译记录 (' + state.translateRecords.length + ' 条)' :
-          state.mode === 'vocabulary' ? '单词本 (' + state.vocabulary.length + ' 个短语)' :
-          state.mode === 'review' ? '今日复习 (' + state.reviewWords.length + ' 个短语)' :
-          '短文簿 (' + state.articles.length + ' 篇文章)'
-        }</p>
+        ${state.mode !== 'settings' && !(state.extractFromHistory || state.translateFromHistory) ? `
+          <p class="subtitle">${
+            state.mode === 'extract' ? '粘贴英文短文后选择提取方式' :
+            state.mode === 'generate' ? '输入单词生成相关短语' :
+            state.mode === 'translate' ? '手动提取并沉浸式阅读' :
+            state.mode === 'translateHistory' ? '提取记录 (' + state.translateRecords.length + ' 条)' :
+            state.mode === 'vocabulary' ? '单词本 (' + state.vocabulary.length + ' 个短语)' :
+            state.mode === 'review' ? '今日复习 (' + state.reviewWords.length + ' 个短语)' :
+            '短文簿 (' + state.articles.length + ' 篇文章)'
+          }</p>
+        ` : ''}
 
         ${state.mode === 'translateHistory' ? `
           <!-- 翻译记录模式 -->
           ${state.translateRecords.length > 0 ? `
-            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-              ${state.translateRecords.map(record => `
-                <div class="phrase-card view-translate-record-btn" data-record-id="${record.id}" style="cursor: pointer;">
-                  <div class="flex items-center justify-between">
-                    <div style="flex: 1;">
-                      <p style="font-weight: 600; color: #1f2937; font-size: 0.875rem; margin-bottom: 0.25rem;">📖 ${escapeHtml(record.title)}</p>
-                      <p style="font-size: 0.75rem; color: #6b7280;">${escapeHtml(record.date)} · ${Object.keys(record.wordMap || {}).length} 词 · ${(record.newWords || []).length} 生词</p>
+            <div class="record-list">
+              ${state.translateRecords.map(record => {
+                const isAutoRecord = record.recordType === 'auto';
+                const recordTypeLabel = isAutoRecord ? '自动提取' : '手动提取';
+                const recordClass = isAutoRecord ? 'record-card-auto' : 'record-card-manual';
+                const primaryCount = isAutoRecord
+                  ? `${(record.phrases || []).length} 个短语`
+                  : `${Object.keys(record.wordMap || {}).length} 个标记`;
+                const secondaryCount = isAutoRecord ? '' : `${(record.newWords || []).length} 个生词`;
+                return `
+                <div class="phrase-card record-card ${recordClass} view-translate-record-btn" data-record-id="${escapeAttr(record.id)}">
+                  <div class="record-main">
+                    <div class="record-topline">
+                      <span class="record-type">${recordTypeLabel}</span>
+                      <span class="record-date">${escapeHtml(record.date)}</span>
                     </div>
-                    <div class="flex items-center gap-1">
-                      <button class="btn btn-red delete-translate-record-btn" data-record-id="${record.id}" style="padding: 0.25rem 0.375rem; font-size: 0.75rem;">
+                    <p class="record-title">${escapeHtml(record.title)}</p>
+                    <div class="record-meta">
+                      <span>${primaryCount}</span>
+                      ${secondaryCount ? `<span>${secondaryCount}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="record-actions">
+                    <button class="btn btn-red record-delete-btn delete-translate-record-btn" data-record-id="${escapeAttr(record.id)}" title="删除">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <polyline points="3 6 5 6 21 6"></polyline>
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
-                      </button>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #9ca3af;">
+                    </button>
+                    <svg class="record-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="9 18 15 12 9 6"></polyline>
-                      </svg>
-                    </div>
+                    </svg>
                   </div>
                 </div>
-              `).join('')}
+              `;
+              }).join('')}
             </div>
           ` : `
             <div style="text-align: center; padding: 3rem 1rem; color: #9ca3af;">
@@ -1523,8 +1637,8 @@ function render() {
                 <polyline points="12 6 12 12 16 14"/>
                 <polyline points="22 2 22 8 16 8"/>
               </svg>
-              <p style="font-size: 0.875rem;">还没有翻译记录</p>
-              <p style="font-size: 0.75rem; margin-top: 0.5rem;">使用翻译功能后会自动保存记录</p>
+              <p style="font-size: 0.875rem;">还没有提取记录</p>
+              <p style="font-size: 0.75rem; margin-top: 0.5rem;">使用提取功能后会自动保存记录</p>
             </div>
           `}
         ` : ''}
@@ -1622,25 +1736,57 @@ function render() {
           `}
         ` : ''}
 
-        ${state.mode === 'extract' ? `
-        <!-- 提取模式 -->
+        ${(state.mode === 'extract' || (state.mode === 'translate' && !state.translateReady)) ? `
+        <!-- 提取输入 -->
+        ${state.extractFromHistory ? `
+          <div class="flex items-center justify-between mb-3">
+            <button id="extractBackBtn" class="btn btn-gray" style="padding: 0.375rem 0.75rem;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              返回
+            </button>
+          </div>
+        ` : ''}
         <textarea
           id="inputText"
-          placeholder="请粘贴英文文章内容..."
-        >${escapeHtml(state.input)}</textarea>
+          class="${state.extractFromHistory ? 'record-source-text' : ''}"
+          placeholder="粘贴英文短文到这里..."
+          style="height: 12rem;"
+          ${state.extractFromHistory ? 'readonly' : ''}
+        >${escapeHtml(extractionInputValue)}</textarea>
 
-        <button
-          id="extractBtn"
-          ${state.loading ? 'disabled' : ''}
-          class="btn btn-primary btn-full"
-        >
-          ${state.loading ? `
-            <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-            </svg>
-            正在提取...
-          ` : '提取短语'}
-        </button>
+        ${!state.extractFromHistory ? `
+          <div class="flex gap-2" style="margin-top: 0.75rem;">
+            <button
+              id="extractBtn"
+              ${state.loading ? 'disabled' : ''}
+              class="btn btn-primary"
+              style="flex: 1; justify-content: center; height: 30px; padding: 0.625rem;"
+            >
+              ${state.loading && state.mode === 'extract' ? `
+                <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                </svg>
+                自动提取中...
+              ` : '自动提取'}
+            </button>
+            <button
+              id="translateBtn"
+              ${state.loading ? 'disabled' : ''}
+              class="btn btn-indigo"
+              style="flex: 1; justify-content: center; height: 30px; padding: 0.625rem;"
+            >
+              ${state.loading && state.mode === 'translate' ? `
+                <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+                </svg>
+                手动提取中...
+              ` : '手动提取'}
+            </button>
+          </div>
+        ` : ''}
         ` : ''}
         
         ${state.mode === 'generate' ? `
@@ -1667,46 +1813,8 @@ function render() {
         </button>
         ` : ''}
 
-        ${state.mode === 'translate' ? `
-        <!-- 翻译/沉浸式阅读模式 -->
-        ${!state.translateReady ? `
-          <!-- 输入阶段 -->
-          <div class="mb-3">
-            <label id="translateFileLabel" class="translate-file-label">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              上传文件 (.txt / .md)
-              <input type="file" id="translateFileInput" accept=".txt,.text,.md,.markdown" style="display: none;" />
-            </label>
-          </div>
-          <textarea
-            id="translateTextInput"
-            placeholder="粘贴英文短文到这里，或上传文件..."
-            style="height: 12rem;"
-          >${escapeHtml(state.translateInput)}</textarea>
-
-          <button
-            id="translateBtn"
-            ${state.loading ? 'disabled' : ''}
-            class="btn btn-primary btn-full"
-          >
-            ${state.loading ? `
-              <svg class="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-              </svg>
-              正在提取短语...
-            ` : `
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 20V10M18 20V4M6 20v-4"/>
-              </svg>
-              开始沉浸式阅读
-            `}
-          </button>
-        ` : `
-          <!-- 沉浸式阅读界面 -->
+        ${state.mode === 'translate' && state.translateReady ? `
+          <!-- 手动提取/沉浸式阅读界面 -->
           <div class="flex items-center justify-between mb-3">
             <button id="translateBackBtn" class="btn btn-gray" style="padding: 0.375rem 0.75rem;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1805,7 +1913,6 @@ function render() {
               </div>
             `}
           </div>
-        `}
         ` : ''}
 
         ${state.error ? `
@@ -2076,7 +2183,7 @@ function render() {
           </div>
         ` : ''}
 
-        ${state.phrases.length > 0 ? `
+        ${state.mode === 'extract' && state.phrases.length > 0 ? `
           <div class="mt-4">
             <div class="result-header">
               <h2 class="result-title">${state.phrases.length} 个短语</h2>
@@ -2201,20 +2308,33 @@ function render() {
 
 // 事件处理函数
 function setMode(mode) {
+  const previousMode = state.mode;
+  const previousInput = state.input;
+  const previousTranslateInput = state.translateInput;
+
+  if (mode === 'translate' && previousMode === 'extract' && !state.translateInput && previousInput) {
+    state.translateInput = previousInput;
+  }
+  if (mode === 'extract' && previousMode === 'translate' && !state.input && previousTranslateInput) {
+    state.input = previousTranslateInput;
+  }
+
   state.mode = mode;
-  state.input = '';
-  state.phrases = [];
-  state.generatedPhrases = [];
+  if (!['extract', 'translate'].includes(mode)) {
+    state.input = '';
+  }
+  if (mode !== 'extract') {
+    state.phrases = [];
+  }
+  if (mode !== previousMode) {
+    state.generatedPhrases = [];
+  }
   state.error = '';
   state.selectedArticle = null;
+  state.extractFromHistory = false;
   state.selectedVocabDate = 'all'; // 重置日期筛选
   if (mode === 'review') {
     state.reviewWords = getTodayReviewWords();
-  }
-  if (mode === 'translate') {
-    // 切回翻译模式时不重置已有数据，方便继续阅读
-  } else {
-    // 离开翻译模式时不清除数据，回来可以继续
   }
   render();
 }
@@ -2239,10 +2359,27 @@ function attachEventListeners() {
   const apiSettingsBtn = document.getElementById('apiSettingsBtn');
   if (apiSettingsBtn) {
     apiSettingsBtn.addEventListener('click', () => {
-      state.showApiSettings = !state.showApiSettings;
+      state.settingsReturnMode = state.mode === 'settings' ? state.settingsReturnMode : state.mode;
+      state.mode = 'settings';
       state.apiKeyInput = state.apiKey;
+      state.apiBaseUrlInput = state.apiBaseUrl || DEFAULT_API_BASE_URL;
+      state.apiModelInput = state.apiModel || DEFAULT_API_MODEL;
       state.error = '';
       render();
+    });
+  }
+
+  const apiBaseUrlInput = document.getElementById('apiBaseUrlInput');
+  if (apiBaseUrlInput) {
+    apiBaseUrlInput.addEventListener('input', (e) => {
+      state.apiBaseUrlInput = e.target.value;
+    });
+  }
+
+  const apiModelInput = document.getElementById('apiModelInput');
+  if (apiModelInput) {
+    apiModelInput.addEventListener('input', (e) => {
+      state.apiModelInput = e.target.value;
     });
   }
 
@@ -2261,7 +2398,7 @@ function attachEventListeners() {
   const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
   if (clearApiKeyBtn) {
     clearApiKeyBtn.addEventListener('click', () => {
-      if (confirm('确定要清除当前API Key吗？')) {
+      if (confirm('确定要清除当前 AI 配置吗？')) {
         clearApiKey();
       }
     });
@@ -2368,12 +2505,12 @@ function attachEventListeners() {
     });
   });
   
-  // 删除翻译记录
+  // 删除提取记录
   const deleteTranslateRecordBtns = document.querySelectorAll('.delete-translate-record-btn');
   deleteTranslateRecordBtns.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (confirm('确定要删除这条翻译记录吗？')) {
+      if (confirm('确定要删除这条提取记录吗？')) {
         deleteTranslateRecord(btn.dataset.recordId);
       }
     });
@@ -2418,46 +2555,29 @@ function attachEventListeners() {
   });
   
   // 模式切换按钮
-  const extractModeBtn = document.getElementById('extractModeBtn');
-  if (extractModeBtn) {
-    extractModeBtn.addEventListener('click', () => setMode('extract'));
-  }
-  
   const generateModeBtn = document.getElementById('generateModeBtn');
   if (generateModeBtn) {
     generateModeBtn.addEventListener('click', () => setMode('generate'));
   }
-  
-  const translateModeBtn = document.getElementById('translateModeBtn');
-  if (translateModeBtn) {
-    translateModeBtn.addEventListener('click', () => setMode('translate'));
-  }
-  
-  // 翻译模式：文件上传
-  const translateFileInput = document.getElementById('translateFileInput');
-  if (translateFileInput) {
-    translateFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) handleTranslateFileUpload(file);
-    });
-  }
-  
-  // 翻译模式：文本输入
-  const translateTextInput = document.getElementById('translateTextInput');
-  if (translateTextInput) {
-    translateTextInput.addEventListener('input', (e) => {
-      state.translateInput = e.target.value;
-    });
+
+  const extractGroupBtn = document.getElementById('extractGroupBtn');
+  if (extractGroupBtn) {
+    extractGroupBtn.addEventListener('click', () => setMode('extract'));
   }
   
   // 翻译模式：开始按钮
   const translateBtn = document.getElementById('translateBtn');
   if (translateBtn) {
     translateBtn.addEventListener('click', () => {
-      if (state.translateInput.trim()) {
-        batchTranslateWords(state.translateInput.trim());
+      const text = (state.input || state.translateInput).trim();
+      if (text) {
+        state.input = text;
+        state.translateInput = text;
+        state.mode = 'translate';
+        state.extractFromHistory = false;
+        batchTranslateWords(text);
       } else {
-        state.error = '请输入或上传英文文本';
+        state.error = '请先粘贴英文文本';
         render();
       }
     });
@@ -2478,6 +2598,16 @@ function attachEventListeners() {
       if (fromHistory) {
         state.mode = 'translateHistory';
       }
+      render();
+    });
+  }
+
+  // 自动提取记录：返回记录列表
+  const extractBackBtn = document.getElementById('extractBackBtn');
+  if (extractBackBtn) {
+    extractBackBtn.addEventListener('click', () => {
+      state.extractFromHistory = false;
+      state.mode = 'translateHistory';
       render();
     });
   }
@@ -2557,7 +2687,10 @@ function attachEventListeners() {
   // 输入框
   const inputText = document.getElementById('inputText');
   if (inputText) {
-    inputText.addEventListener('input', (e) => updateInput(e.target.value));
+    inputText.addEventListener('input', (e) => {
+      updateInput(e.target.value);
+      state.translateInput = e.target.value;
+    });
   }
   
   const wordInput = document.getElementById('wordInput');
@@ -2568,7 +2701,14 @@ function attachEventListeners() {
   // 提取按钮
   const extractBtn = document.getElementById('extractBtn');
   if (extractBtn) {
-    extractBtn.addEventListener('click', extractPhrases);
+    extractBtn.addEventListener('click', () => {
+      const text = (state.input || state.translateInput).trim();
+      state.input = text;
+      state.mode = 'extract';
+      state.extractFromHistory = false;
+      state.translateInput = text;
+      extractPhrases();
+    });
   }
   
   // 生成按钮

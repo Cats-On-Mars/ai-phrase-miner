@@ -367,6 +367,132 @@ textarea:focus {
   box-shadow: 0 4px 6px -1px rgba(102, 187, 106, 0.2);
 }
 
+/* 提取记录 */
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.record-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  cursor: pointer;
+  background: #ffffff;
+  border-color: #dbe7d2;
+  border-left-width: 4px;
+  padding: 0.75rem;
+}
+
+.record-card-auto {
+  border-left-color: #66bb6a;
+}
+
+.record-card-manual {
+  border-left-color: #3b82f6;
+}
+
+.record-main {
+  min-width: 0;
+}
+
+.record-topline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+  min-width: 0;
+}
+
+.record-type {
+  flex-shrink: 0;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: #eef7e8;
+  color: #33691e;
+  font-size: 0.6875rem;
+  font-weight: 700;
+}
+
+.record-card-manual .record-type {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.record-date {
+  min-width: 0;
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.record-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.record-meta span {
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.record-delete-btn {
+  width: 2rem;
+  height: 2rem;
+  justify-content: center;
+  padding: 0;
+  background: #f9fafb;
+}
+
+.record-chevron {
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.record-source-text {
+  min-height: 13rem;
+  padding: 0.875rem;
+  background: #fbfdf8;
+  border-color: #dbe7d2;
+  color: #1f2937;
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  letter-spacing: 0;
+  resize: vertical;
+}
+
+.record-source-text:focus {
+  border-color: #b7d99b;
+}
+
 .phrase-number {
   flex-shrink: 0;
   width: 1.5rem;
@@ -489,29 +615,6 @@ textarea:focus {
 
 .review-tooltip {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-/* ========== 翻译/沉浸式阅读样式 ========== */
-
-/* 文件上传按钮 */
-.translate-file-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  border-radius: 0.5rem;
-  border: 1px dashed #a5d6a7;
-  background: #f1f8e9;
-  color: #558b2f;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.translate-file-label:hover {
-  background: #dcedc8;
-  border-color: #81c784;
 }
 
 /* 沉浸式阅读区 */
